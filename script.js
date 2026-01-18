@@ -24,10 +24,19 @@ class SyllabusBuilder {
             { id: 'ai', optionalFields: ['aiGuidance'] }
         ];
 
+        this.autoSaveTimeout = null;
+        this.autoSaveDelay = 2000; // 2 seconds
+        this.lastSaveTime = null;
+        this.previewPdfBlob = null;
+        this.previewPdfData = null;
+
+        this.checkAutoSaveRecovery();
         this.initializeEventListeners();
         this.initializeCourseOutlineBuilder();
         this.initializeTOC();
         this.updateTOCStatus();
+        this.startAutoSaveStatusUpdater();
+        this.initializeSortable();
     }
 
     initializeEventListeners() {
@@ -35,14 +44,29 @@ class SyllabusBuilder {
         document.getElementById('loadBtn').addEventListener('click', () => this.loadSyllabus());
         document.getElementById('saveBtn').addEventListener('click', () => this.saveSyllabus());
         document.getElementById('exportWordBtn').addEventListener('click', () => this.exportToWord());
+        document.getElementById('previewPdfBtn').addEventListener('click', () => this.previewPDF());
         document.getElementById('exportPdfBtn').addEventListener('click', () => this.exportToPDF());
 
         // Handle file input for loading
         document.getElementById('loadFile').addEventListener('change', (e) => this.handleFileLoad(e));
 
+        // Modal close handlers
+        document.querySelectorAll('.close-modal').forEach(btn => {
+            btn.addEventListener('click', () => this.closeModal());
+        });
+
+        // Download PDF from preview
+        document.getElementById('downloadPdfFromPreview').addEventListener('click', () => this.downloadPdfFromPreview());
+
         // Update TOC status when form fields change
-        this.form.addEventListener('input', () => this.updateTOCStatus());
-        this.form.addEventListener('change', () => this.updateTOCStatus());
+        this.form.addEventListener('input', () => {
+            this.updateTOCStatus();
+            this.scheduleAutoSave();
+        });
+        this.form.addEventListener('change', () => {
+            this.updateTOCStatus();
+            this.scheduleAutoSave();
+        });
     }
 
     initializeCourseOutlineBuilder() {
@@ -68,7 +92,9 @@ class SyllabusBuilder {
         moduleItem.dataset.moduleId = moduleId;
         moduleItem.innerHTML = `
             <div class="module-header">
+                <span class="drag-handle" title="Drag to reorder">☰</span>
                 <input type="text" class="module-title" placeholder="Module ${moduleNumber}: Introduction to Topic">
+                <button type="button" class="duplicate-module-btn" title="Duplicate this module">Duplicate</button>
                 <button type="button" class="remove-module-btn">Remove Module</button>
             </div>
             <textarea class="module-description" rows="2" placeholder="Brief module description or learning objectives (optional)"></textarea>
@@ -83,6 +109,9 @@ class SyllabusBuilder {
         this.addClassDay(moduleId);
 
         this.updateTOCStatus();
+
+        // Reinitialize sortable for the new module's class days
+        this.initializeSortableForClassDays();
     }
 
     addClassDay(moduleId) {
@@ -94,7 +123,9 @@ class SyllabusBuilder {
         classDayItem.className = 'class-day-item';
         classDayItem.innerHTML = `
             <div class="class-day-header">
+                <span class="drag-handle" title="Drag to reorder">☰</span>
                 <input type="text" class="class-day-title" placeholder="Class Day ${dayNumber}: Topic Name" required>
+                <button type="button" class="duplicate-class-day-btn" title="Duplicate this class day">Duplicate</button>
                 <button type="button" class="remove-class-btn">Remove</button>
             </div>
             <textarea class="class-day-content" rows="6" placeholder="Readings: List your readings here.&#10;&#10;Activity: Describe class activities.&#10;&#10;Assignment: Assignment description and due date." required></textarea>
@@ -114,6 +145,12 @@ class SyllabusBuilder {
                     this.addClassDay(moduleId);
                 }
 
+                // Handle "Duplicate Module" button clicks
+                if (e.target.classList.contains('duplicate-module-btn')) {
+                    const moduleItem = e.target.closest('.module-item');
+                    this.duplicateModule(moduleItem);
+                }
+
                 // Handle "Remove Module" button clicks
                 if (e.target.classList.contains('remove-module-btn')) {
                     const moduleItems = moduleContainer.querySelectorAll('.module-item');
@@ -123,6 +160,12 @@ class SyllabusBuilder {
                     } else {
                         alert('You must have at least one module.');
                     }
+                }
+
+                // Handle "Duplicate Class Day" button clicks
+                if (e.target.classList.contains('duplicate-class-day-btn')) {
+                    const classDayItem = e.target.closest('.class-day-item');
+                    this.duplicateClassDay(classDayItem);
                 }
 
                 // Handle "Remove Class Day" button clicks
@@ -139,6 +182,178 @@ class SyllabusBuilder {
                     }
                 }
             });
+        }
+    }
+
+    duplicateModule(moduleItem) {
+        const newModuleItem = moduleItem.cloneNode(true);
+
+        // Generate new unique module ID
+        const newModuleId = 'module-' + Date.now();
+        newModuleItem.dataset.moduleId = newModuleId;
+
+        // Update the class days container's data-module-id
+        const classDaysContainer = newModuleItem.querySelector('.module-class-days');
+        if (classDaysContainer) {
+            classDaysContainer.dataset.moduleId = newModuleId;
+        }
+
+        // Update the add class day button's data-module-id
+        const addClassDayBtn = newModuleItem.querySelector('.add-class-day-btn');
+        if (addClassDayBtn) {
+            addClassDayBtn.dataset.moduleId = newModuleId;
+        }
+
+        // Insert the duplicated module after the original
+        moduleItem.parentNode.insertBefore(newModuleItem, moduleItem.nextSibling);
+
+        this.updateTOCStatus();
+        this.scheduleAutoSave();
+
+        // Reinitialize sortable for the duplicated module's class days
+        this.initializeSortableForClassDays();
+    }
+
+    duplicateClassDay(classDayItem) {
+        const newClassDayItem = classDayItem.cloneNode(true);
+
+        // Insert the duplicated class day after the original
+        classDayItem.parentNode.insertBefore(newClassDayItem, classDayItem.nextSibling);
+
+        this.updateTOCStatus();
+        this.scheduleAutoSave();
+    }
+
+    // Drag-and-drop functionality with SortableJS
+    initializeSortable() {
+        // Initialize sortable for modules
+        const moduleContainer = document.getElementById('moduleContainer');
+        if (moduleContainer && typeof Sortable !== 'undefined') {
+            Sortable.create(moduleContainer, {
+                animation: 150,
+                handle: '.drag-handle',
+                ghostClass: 'sortable-ghost',
+                chosenClass: 'sortable-chosen',
+                dragClass: 'sortable-drag',
+                onEnd: () => {
+                    this.updateTOCStatus();
+                    this.scheduleAutoSave();
+                }
+            });
+
+            // Initialize sortable for all class days containers
+            this.initializeSortableForClassDays();
+        }
+    }
+
+    initializeSortableForClassDays() {
+        const classDaysContainers = document.querySelectorAll('.module-class-days');
+        classDaysContainers.forEach(container => {
+            if (typeof Sortable !== 'undefined' && !container.sortableInstance) {
+                const sortableInstance = Sortable.create(container, {
+                    animation: 150,
+                    handle: '.drag-handle',
+                    ghostClass: 'sortable-ghost',
+                    chosenClass: 'sortable-chosen',
+                    dragClass: 'sortable-drag',
+                    onEnd: () => {
+                        this.updateTOCStatus();
+                        this.scheduleAutoSave();
+                    }
+                });
+                // Store reference to prevent duplicate initialization
+                container.sortableInstance = sortableInstance;
+            }
+        });
+    }
+
+    // Auto-save functionality
+    checkAutoSaveRecovery() {
+        const autoSaved = localStorage.getItem('syllabus_autosave');
+        if (autoSaved) {
+            try {
+                const saveData = JSON.parse(autoSaved);
+                const saveTime = new Date(saveData.timestamp);
+                const timeDiff = Date.now() - saveTime.getTime();
+                const minutesAgo = Math.floor(timeDiff / 60000);
+
+                const message = minutesAgo < 1
+                    ? 'An auto-saved version from just now was found.'
+                    : `An auto-saved version from ${minutesAgo} minute${minutesAgo > 1 ? 's' : ''} ago was found.`;
+
+                if (confirm(`${message} Would you like to recover it?`)) {
+                    this.populateForm(saveData.data);
+                } else {
+                    localStorage.removeItem('syllabus_autosave');
+                }
+            } catch (e) {
+                console.error('Error loading auto-save:', e);
+                localStorage.removeItem('syllabus_autosave');
+            }
+        }
+    }
+
+    scheduleAutoSave() {
+        if (this.autoSaveTimeout) {
+            clearTimeout(this.autoSaveTimeout);
+        }
+
+        this.autoSaveTimeout = setTimeout(() => {
+            this.performAutoSave();
+        }, this.autoSaveDelay);
+    }
+
+    performAutoSave() {
+        try {
+            const data = this.collectFormData();
+            const saveData = {
+                data: data,
+                timestamp: new Date().toISOString()
+            };
+            localStorage.setItem('syllabus_autosave', JSON.stringify(saveData));
+            this.lastSaveTime = Date.now();
+            this.updateAutoSaveStatus();
+        } catch (e) {
+            console.error('Error auto-saving:', e);
+        }
+    }
+
+    updateAutoSaveStatus() {
+        let statusEl = document.getElementById('autoSaveStatus');
+        if (!statusEl) {
+            statusEl = document.createElement('span');
+            statusEl.id = 'autoSaveStatus';
+            statusEl.className = 'auto-save-status';
+            document.querySelector('.fixed-actions').appendChild(statusEl);
+        }
+
+        if (this.lastSaveTime) {
+            const secondsAgo = Math.floor((Date.now() - this.lastSaveTime) / 1000);
+            if (secondsAgo < 5) {
+                statusEl.textContent = 'Auto-saved just now';
+            } else if (secondsAgo < 60) {
+                statusEl.textContent = `Auto-saved ${secondsAgo}s ago`;
+            } else {
+                const minutesAgo = Math.floor(secondsAgo / 60);
+                statusEl.textContent = `Auto-saved ${minutesAgo}m ago`;
+            }
+        }
+    }
+
+    startAutoSaveStatusUpdater() {
+        setInterval(() => {
+            if (this.lastSaveTime) {
+                this.updateAutoSaveStatus();
+            }
+        }, 10000); // Update every 10 seconds
+    }
+
+    clearAutoSave() {
+        localStorage.removeItem('syllabus_autosave');
+        this.lastSaveTime = null;
+        const statusEl = document.getElementById('autoSaveStatus');
+        if (statusEl) {
+            statusEl.textContent = '';
         }
     }
 
@@ -609,11 +824,14 @@ class SyllabusBuilder {
         const data = this.collectFormData();
         const dataStr = JSON.stringify(data, null, 2);
         const blob = new Blob([dataStr], { type: 'application/json' });
-        
+
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
         link.download = `syllabus_${data.courseNumber || 'draft'}_${new Date().toISOString().split('T')[0]}.json`;
         link.click();
+
+        // Clear auto-save after successful manual save
+        this.clearAutoSave();
     }
 
     // Load syllabus from JSON file
@@ -1545,6 +1763,351 @@ class SyllabusBuilder {
             </div>
             ` : ''}
         `;
+    }
+
+    // PDF Preview functionality
+    async previewPDF() {
+        const data = this.collectFormData();
+
+        // Get actual text for select fields
+        data.academicIntegrity = this.getSelectDisplayText('academicIntegrity', data.academicIntegrity);
+        data.gradingGuidelines = this.getSelectDisplayText('gradingGuidelines', data.gradingGuidelines);
+        if (data.studentWellness) {
+            data.studentWellness = this.getSelectDisplayText('studentWellness', data.studentWellness);
+        }
+        if (data.religiousObservances) {
+            data.religiousObservances = this.getSelectDisplayText('religiousObservances', data.religiousObservances);
+        }
+        if (data.electronicDevices) {
+            data.electronicDevices = this.getSelectDisplayText('electronicDevices', data.electronicDevices);
+        }
+        if (data.aiGuidance) {
+            data.aiGuidance = this.getSelectDisplayText('aiGuidance', data.aiGuidance);
+        }
+
+        // Validation
+        const requiredFields = ['courseTitle', 'courseNumber', 'term', 'credits', 'instructorName', 'officeHours', 'classSchedule', 'courseDescription', 'learningOutcomes', 'assignmentTypes', 'gradingPercentages', 'dueDatesPolicy', 'academicIntegrity', 'integrityOfCredit', 'gradingGuidelines'];
+
+        const missingFields = requiredFields.filter(field => !data[field] || data[field].trim() === '');
+
+        if (missingFields.length > 0) {
+            alert(`Please fill in all required fields: ${missingFields.map(f => f.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())).join(', ')}`);
+            return;
+        }
+
+        // Validate course outline
+        if (!data.courseOutline || !data.courseOutline.modules || data.courseOutline.modules.length === 0) {
+            alert('Please add at least one module to the course outline.');
+            return;
+        }
+
+        // Check that at least one module has class days
+        const hasClassDays = data.courseOutline.modules.some(module =>
+            module.classDays && module.classDays.length > 0
+        );
+        if (!hasClassDays) {
+            alert('Please add at least one class day to the course outline.');
+            return;
+        }
+
+        try {
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF('p', 'mm', 'a4');
+
+            // Generate PDF content (using the same logic as exportToPDF)
+            this.generatePDFContent(pdf, data);
+
+            // Create blob instead of saving
+            const blob = pdf.output('blob');
+            this.previewPdfBlob = blob;
+            this.previewPdfData = data;
+
+            // Create object URL and display in iframe
+            const url = URL.createObjectURL(blob);
+            const iframe = document.getElementById('pdfPreviewFrame');
+            iframe.src = url;
+
+            // Show modal
+            const modal = document.getElementById('pdfPreviewModal');
+            modal.classList.add('show');
+
+        } catch (error) {
+            console.error('Error creating PDF preview:', error);
+            alert('Error creating PDF preview. Please try again.');
+        }
+    }
+
+    generatePDFContent(pdf, data) {
+        const pageWidth = 210;
+        const pageHeight = 297;
+        const margin = 20;
+        const contentWidth = pageWidth - (2 * margin);
+        let yPosition = margin;
+
+        // Helper function to add text with auto page breaks
+        const addText = (text, fontSize, isBold = false, color = [0, 0, 0]) => {
+            pdf.setFontSize(fontSize);
+            pdf.setFont('helvetica', isBold ? 'bold' : 'normal');
+            pdf.setTextColor(...color);
+
+            const lines = pdf.splitTextToSize(text, contentWidth);
+
+            for (let line of lines) {
+                if (yPosition + fontSize / 2 > pageHeight - margin) {
+                    pdf.addPage();
+                    yPosition = margin;
+                }
+                pdf.text(line, margin, yPosition);
+                yPosition += fontSize / 2 + 2;
+            }
+        };
+
+        const addSpacing = (space = 5) => {
+            yPosition += space;
+        };
+
+        // Title
+        pdf.setTextColor(87, 6, 140);
+        addText(data.courseTitle, 18, true, [87, 6, 140]);
+        addText('NYU Stern School of Business', 14, false, [87, 6, 140]);
+        addSpacing(10);
+
+        // Basic Info
+        pdf.setTextColor(0, 0, 0);
+        addText(`Course Number / Section: ${data.courseNumber}`, 11, true);
+        addText(`Term: ${data.term}`, 11);
+        addText(`Credits: ${data.credits}`, 11);
+        if (data.prerequisites) addText(`Prerequisites: ${data.prerequisites}`, 11);
+        addText(`Instructor Name: ${data.instructorName}`, 11);
+        addText(`Office Hours: ${data.officeHours}`, 11);
+        addText(`Class Schedule: ${data.classSchedule}`, 11);
+        addSpacing(10);
+
+        // Course Description
+        addText('Course Description', 14, true, [87, 6, 140]);
+        addSpacing(3);
+        addText(data.courseDescription, 11);
+        addSpacing(10);
+
+        // Learning Outcomes
+        addText('Learning Outcomes', 14, true, [87, 6, 140]);
+        addSpacing(3);
+        addText(data.learningOutcomes, 11);
+        addSpacing(10);
+
+        // Communication Strategy
+        if (data.communicationStrategy) {
+            addText('Communication Strategy', 14, true, [87, 6, 140]);
+            addSpacing(3);
+            addText(data.communicationStrategy, 11);
+            addSpacing(10);
+        }
+
+        // Technical Requirements
+        if (data.technicalRequirements) {
+            addText('Technical Requirements', 14, true, [87, 6, 140]);
+            addSpacing(3);
+            addText(data.technicalRequirements, 11);
+            addSpacing(10);
+        }
+
+        // Course Requirements and Assignments
+        addText('Course Requirements and Assignments', 14, true, [87, 6, 140]);
+        addSpacing(3);
+        addText('Assignment Types and Descriptions:', 11, true);
+        addText(data.assignmentTypes, 11);
+        addSpacing(5);
+        addText('Grading Percentages:', 11, true);
+        addText(data.gradingPercentages, 11);
+        addSpacing(5);
+        addText('Due Dates and Late Policy:', 11, true);
+        addText(data.dueDatesPolicy, 11);
+        addSpacing(10);
+
+        // Course Outline
+        addText('Course Outline', 14, true, [87, 6, 140]);
+        addSpacing(5);
+
+        // Generate tables for each module
+        if (data.courseOutline.modules && data.courseOutline.modules.length > 0) {
+            data.courseOutline.modules.forEach((module) => {
+                // Module header
+                if (module.title) {
+                    pdf.setFontSize(12);
+                    pdf.setFont('helvetica', 'bold');
+                    pdf.setTextColor(87, 6, 140);
+                    if (yPosition + 10 > pageHeight - margin) {
+                        pdf.addPage();
+                        yPosition = margin;
+                    }
+                    pdf.text(module.title, margin, yPosition);
+                    yPosition += 6;
+
+                    if (module.description) {
+                        pdf.setFont('helvetica', 'normal');
+                        pdf.setTextColor(0, 0, 0);
+                        pdf.setFontSize(10);
+                        const descLines = pdf.splitTextToSize(module.description, contentWidth);
+                        for (let line of descLines) {
+                            if (yPosition + 5 > pageHeight - margin) {
+                                pdf.addPage();
+                                yPosition = margin;
+                            }
+                            pdf.text(line, margin, yPosition);
+                            yPosition += 5;
+                        }
+                        yPosition += 3;
+                    }
+                }
+
+                // Create table for class days
+                if (module.classDays && module.classDays.length > 0) {
+                    const tableData = module.classDays.map(day => [
+                        day.title,
+                        day.content
+                    ]);
+
+                    // Check for page break
+                    if (yPosition > pageHeight - 50) {
+                        pdf.addPage();
+                        yPosition = margin;
+                    }
+
+                    // Use autoTable
+                    if (typeof pdf.autoTable === 'function') {
+                        const tableWidth = pageWidth - (2 * margin);
+                        pdf.autoTable({
+                            startY: yPosition,
+                            head: [['Class Day & Title', 'Readings, Assignments, and Activities']],
+                            body: tableData,
+                            theme: 'grid',
+                            headStyles: {
+                                fillColor: [87, 6, 140],
+                                textColor: [255, 255, 255],
+                                fontStyle: 'bold',
+                                halign: 'left'
+                            },
+                            columnStyles: {
+                                0: { cellWidth: tableWidth * 0.35, fontStyle: 'bold' },
+                                1: { cellWidth: tableWidth * 0.65 }
+                            },
+                            styles: {
+                                fontSize: 9,
+                                cellPadding: 3,
+                                valign: 'top',
+                                overflow: 'linebreak',
+                                cellWidth: 'wrap'
+                            },
+                            margin: { left: margin, right: margin },
+                            tableWidth: 'auto'
+                        });
+                        yPosition = pdf.lastAutoTable.finalY + 10;
+                    }
+                }
+
+                addSpacing(5);
+            });
+        }
+
+        addSpacing(5);
+
+        // Academic Integrity
+        addText('Academic Integrity', 14, true, [87, 6, 140]);
+        addSpacing(3);
+        addText(data.academicIntegrity, 11);
+        addSpacing(10);
+
+        // Stern Code of Conduct
+        addText('Stern Code of Conduct', 14, true, [87, 6, 140]);
+        addSpacing(3);
+        addText(data.codeOfConduct, 11);
+        addSpacing(10);
+
+        // Integrity of Credit
+        addText('Integrity of Credit', 14, true, [87, 6, 140]);
+        addSpacing(3);
+        addText(data.integrityOfCredit, 11);
+        addSpacing(10);
+
+        // General Conduct
+        addText('General Conduct & Behavior', 14, true, [87, 6, 140]);
+        addSpacing(3);
+        addText(data.generalConduct, 11);
+        addSpacing(10);
+
+        // Grading Guidelines
+        if (data.gradingGuidelines) {
+            addText('Grading Guidelines', 14, true, [87, 6, 140]);
+            addSpacing(3);
+            addText(data.gradingGuidelines, 11);
+            addSpacing(10);
+        }
+
+        // Student Accessibility
+        addText('Student Accessibility', 14, true, [87, 6, 140]);
+        addSpacing(3);
+        addText(data.studentAccessibility, 11);
+        addSpacing(10);
+
+        // Optional sections
+        if (data.studentWellness) {
+            addText('Student Wellness', 14, true, [87, 6, 140]);
+            addSpacing(3);
+            addText(data.studentWellness, 11);
+            addSpacing(10);
+        }
+
+        if (data.namePronouns) {
+            addText('Name Pronunciation and Pronouns', 14, true, [87, 6, 140]);
+            addSpacing(3);
+            addText(data.namePronouns, 11);
+            addSpacing(10);
+        }
+
+        if (data.religiousObservances) {
+            addText('Religious Observances and Absences', 14, true, [87, 6, 140]);
+            addSpacing(3);
+            addText(data.religiousObservances, 11);
+            addSpacing(10);
+        }
+
+        if (data.electronicDevices) {
+            addText('Electronic Devices Policy', 14, true, [87, 6, 140]);
+            addSpacing(3);
+            addText(data.electronicDevices, 11);
+            addSpacing(10);
+        }
+
+        if (data.aiGuidance) {
+            addText('AI Guidance', 14, true, [87, 6, 140]);
+            addSpacing(3);
+            addText(data.aiGuidance, 11);
+            addSpacing(10);
+        }
+    }
+
+    closeModal() {
+        const modal = document.getElementById('pdfPreviewModal');
+        modal.classList.remove('show');
+
+        // Clean up object URL
+        const iframe = document.getElementById('pdfPreviewFrame');
+        if (iframe.src) {
+            URL.revokeObjectURL(iframe.src);
+            iframe.src = '';
+        }
+    }
+
+    downloadPdfFromPreview() {
+        if (this.previewPdfBlob && this.previewPdfData) {
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(this.previewPdfBlob);
+            link.download = `${this.previewPdfData.courseNumber}_Syllabus.pdf`;
+            link.click();
+
+            // Close modal after download
+            this.closeModal();
+        }
     }
 }
 

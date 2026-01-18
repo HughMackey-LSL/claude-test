@@ -9,6 +9,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 </head>
 <body>
     <!-- Fixed Action Buttons -->
@@ -18,6 +19,7 @@
         <button type="button" id="loadBtn" title="Load Syllabus">Load</button>
         <button type="button" id="saveBtn" title="Save for Editing">Save</button>
         <button type="button" id="exportWordBtn" title="Export to Word">Word</button>
+        <button type="button" id="previewPdfBtn" title="Preview PDF before downloading">Preview PDF</button>
         <button type="button" id="exportPdfBtn" title="Export to PDF">PDF</button>
     </div>
 
@@ -326,6 +328,23 @@ To help ensure the integrity of our learning community, prose assignments you su
                 </section>
             </form>
         </main>
+    </div>
+
+    <!-- PDF Preview Modal -->
+    <div id="pdfPreviewModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>PDF Preview</h2>
+                <button type="button" class="close-modal" title="Close preview">&times;</button>
+            </div>
+            <div class="modal-body">
+                <iframe id="pdfPreviewFrame"></iframe>
+            </div>
+            <div class="modal-footer">
+                <button type="button" id="downloadPdfFromPreview" class="modal-btn-primary">Download PDF</button>
+                <button type="button" class="close-modal modal-btn-secondary">Close</button>
+            </div>
+        </div>
     </div>
 
     <script type="module" src="script.js"></script>

@@ -9,7 +9,8 @@
       "Bash(start test-export.html)",
       "Bash(python:*)",
       "Bash(start http://localhost:8000/index.html)",
-      "Bash(start:*)"
+      "Bash(start:*)",
+      "Bash(cat:*)"
     ],
     "deny": []
   }

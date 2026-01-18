@@ -60,6 +60,16 @@ body {
     min-width: 100px;
 }
 
+.auto-save-status {
+    display: flex;
+    align-items: center;
+    padding: 10px 15px;
+    font-size: 0.85rem;
+    color: var(--success-color);
+    font-weight: 500;
+    font-style: italic;
+}
+
 /* Sidebar Table of Contents */
 .sidebar-toc {
     position: fixed;
@@ -565,6 +575,23 @@ html {
     margin-bottom: 10px;
 }
 
+.drag-handle {
+    cursor: grab;
+    font-size: 1.2rem;
+    color: var(--text-light);
+    padding: 5px;
+    user-select: none;
+    transition: color 0.3s ease;
+}
+
+.drag-handle:hover {
+    color: var(--nyu-purple);
+}
+
+.drag-handle:active {
+    cursor: grabbing;
+}
+
 .module-header .module-title {
     flex: 1;
     font-weight: 600;
@@ -585,6 +612,26 @@ html {
     color: var(--text-light);
     font-size: 0.9rem;
     margin-bottom: 15px;
+}
+
+.duplicate-module-btn,
+.duplicate-class-day-btn {
+    background-color: var(--nyu-light-purple);
+    color: white;
+    padding: 8px 15px;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    text-transform: none;
+    letter-spacing: normal;
+    min-width: auto;
+}
+
+.duplicate-module-btn:hover,
+.duplicate-class-day-btn:hover {
+    background-color: var(--nyu-purple);
 }
 
 .remove-module-btn {
@@ -768,4 +815,161 @@ html {
     .course-outline-table td {
         padding: 10px;
     }
+}
+
+/* Sortable.js drag states */
+.sortable-ghost {
+    opacity: 0.4;
+    background-color: var(--nyu-gray);
+}
+
+.sortable-chosen {
+    box-shadow: 0 4px 12px rgba(87, 6, 140, 0.3);
+}
+
+.sortable-drag {
+    opacity: 0.8;
+    transform: rotate(2deg);
+}
+
+/* PDF Preview Modal */
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    z-index: 2000;
+    overflow: auto;
+}
+
+.modal.show {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.modal-content {
+    background-color: white;
+    border-radius: 8px;
+    width: 90%;
+    max-width: 1200px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 30px;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.modal-header h2 {
+    color: var(--nyu-purple);
+    margin: 0;
+    font-size: 1.5rem;
+}
+
+.close-modal {
+    background: none;
+    border: none;
+    font-size: 2rem;
+    color: var(--text-light);
+    cursor: pointer;
+    padding: 0;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: all 0.3s ease;
+    min-width: auto;
+}
+
+.close-modal:hover {
+    background-color: var(--nyu-gray);
+    color: var(--error-color);
+    transform: none;
+}
+
+.modal-body {
+    flex: 1;
+    padding: 20px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+#pdfPreviewFrame {
+    width: 100%;
+    height: 100%;
+    min-height: 600px;
+    border: 2px solid var(--border-color);
+    border-radius: 4px;
+}
+
+.modal-footer {
+    display: flex;
+    gap: 15px;
+    padding: 20px 30px;
+    border-top: 2px solid var(--border-color);
+    justify-content: flex-end;
+}
+
+.modal-btn-primary {
+    background-color: var(--nyu-purple);
+    color: white;
+    padding: 12px 30px;
+    border: none;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.modal-btn-primary:hover {
+    background-color: var(--nyu-light-purple);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.modal-btn-secondary {
+    background-color: var(--text-light);
+    color: white;
+    padding: 12px 30px;
+    border: none;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.modal-btn-secondary:hover {
+    background-color: var(--text-dark);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+#previewPdfBtn {
+    background-color: #2E86AB;
+    color: white;
+}
+
+#previewPdfBtn:hover {
+    background-color: #1F5F8B;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }
